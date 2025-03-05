@@ -35,15 +35,33 @@ const DOM = {
   queryInput: () => document.getElementById("queryInput"),
   filePathInput: () => document.getElementById("filePathInput"),
   executeButton: () => document.getElementById("executeButton"),
+  questionList: () => document.getElementById("suggested-questions"),
 };
 
 document.addEventListener("DOMContentLoaded", () => {
   const loadFileButton = document.getElementById("loadFileButton");
-  const executeButton = document.getElementById("executeButton");
-  loadFileButton.addEventListener("click", loadFile);
-  executeButton.addEventListener("click", executeQuery);
+  const executeButton = DOM.executeButton();
+
+  if (loadFileButton) {
+    loadFileButton.addEventListener("click", loadFile);
+  }
+  if (executeButton) {
+    executeButton.addEventListener("click", executeQuery);
+  }
+  // Use event delegation to handle dynamically created elements
+  document.body.addEventListener("click", function (event) {
+    if (event.target.classList.contains("suggested-question")) {
+      event.preventDefault(); // Prevent default link behavior
+      const queryInput = DOM.queryInput();
+      if (queryInput) {
+        queryInput.value = event.target.textContent; // Set input value
+        executeButton.click(); // Submit query
+      }
+    }
+  });
+
   // Initialize the output area
-  const output = document.getElementById("output");
+  const output = DOM.output();
   if (output) {
     render(html``, output);
   }
@@ -60,45 +78,46 @@ function renderOutput(data) {
   const template = html`
     <div>
       ${data.uploaded_datasets.map(
-        (dataset, index) =>
-          html`
-            <div class="card mb-3">
-              <div class="card-header">
-                <h5>
-                  Dataset ${index + 1}: ${dataset.dataset_name}
-                  <span class="badge bg-secondary">${dataset.file_type}</span>
-                </h5>
-              </div>
-              <div class="card-body">
-                <h6 class="card-title">Schema:</h6>
-                <table class="table table-bordered">
-                  <thead>
-                    <tr>
-                      <th>Column Name</th>
-                      <th>Data Type</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${parseSchema(dataset.schema).map(
-                      (col) =>
-                        html`
-                          <tr>
-                            <td>${col.name}</td>
-                            <td>${col.type}</td>
-                          </tr>
-                        `
-                    )}
-                  </tbody>
-                </table>
-                <h6 class="card-title">Suggested Questions:</h6>
-                <ul class="list-group">
-                  ${dataset.suggested_questions
-                    .split("\n")
-                    .map((question) => html`<li class="list-group-item">${question}</li>`)}
-                </ul>
-              </div>
+        (dataset, index) => html`
+          <div class="card mb-3">
+            <div class="card-header">
+              <h5>
+                Dataset ${index + 1}: ${dataset.dataset_name}
+                <span class="badge bg-secondary">${dataset.file_type}</span>
+              </h5>
             </div>
-          `
+            <div class="card-body">
+              <h6 class="card-title">Schema:</h6>
+              <table class="table table-bordered">
+                <thead>
+                  <tr>
+                    <th>Column Name</th>
+                    <th>Data Type</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${parseSchema(dataset.schema).map(
+                    (col) => html`
+                      <tr>
+                        <td>${col.name}</td>
+                        <td>${col.type}</td>
+                      </tr>
+                    `
+                  )}
+                </tbody>
+              </table>
+              <h6 class="card-title">Suggested Questions:</h6>
+              <ul class="list-group">
+                ${dataset.suggested_questions.split("\n").map(
+                  (question) =>
+                    html` <li class="list-group-item">
+                      <a href="#" class="suggested-question">${question}</a>
+                    </li>`
+                )}
+              </ul>
+            </div>
+          </div>
+        `
       )}
     </div>
   `;
@@ -190,7 +209,7 @@ async function executeQuery() {
           <h6>Response from LLM:</h6>
           <div>${unsafeHTML(marked.parse(result.llm_response))}</div>
           <h6>SQL Query Execution Result:</h6>
-          <div id="sqlResultTable"></div>
+          <div id="sqlResultTable" class="table-responsive" style="max-height: 400px; overflow-x: auto; border: 1px"></div>
           <div class="mt-3">
             <button class="btn btn-primary me-2" @click=${() => downloadCSV(result.result, "query_result.csv")}>
               <i class="bi bi-download"></i> Download Results as CSV

@@ -38,7 +38,6 @@ SYSTEM_PROMPT = (
     "     OR LOWER(ReviewText) LIKE '%keyword2%'\n"
     "  GROUP BY ReviewText\n"
     "  ORDER BY Frequency DESC\n"
-    "  LIMIT 10;\n\n"
     "For trends or patterns:\n"
     "- Use simple aggregations (COUNT, AVG, SUM)\n"
     "- Group by relevant columns\n"
@@ -194,7 +193,7 @@ async def upload_csv(request: AnalyzeFileRequest):
         user_prompt = (
             f"Dataset name: {dataset_name}\n"
             f"Schema: {schema_description}\n"
-            "Please provide 5 suggested questions (ONLY) that can be answered using duckDB queries on this dataset."
+            "Please provide 5 suggested questions (ONLY QUESTIONS, NO EXPLANATION, NO Serial Numbers) that can be answered using duckDB queries on this dataset."
         )
         suggested_questions = await call_llm_system_prompt(user_prompt)
 
@@ -248,20 +247,22 @@ async def query_data(request: QueryRequest):
         # Split the file paths and process each file
         file_paths = [path.strip() for path in request.file_path.split(",")]
 
+        # Define dtype_mapping for DuckDB
+        dtype_mapping = {
+            "object": "TEXT",
+            "int64": "INTEGER",
+            "float64": "FLOAT",
+            "bool": "BOOLEAN",
+            "datetime64[ns]": "DATETIME",
+        }
+
         # Process each file and create tables in DuckDB
         for file_path in file_paths:
-            df = pd.read_csv(file_path, encoding="iso-8859-1")
-            dataset_name = os.path.splitext(os.path.basename(file_path))[0]
-
-            # Define dtype_mapping for DuckDB
-            dtype_mapping = {
-                "object": "TEXT",
-                "int64": "INTEGER",
-                "float64": "FLOAT",
-                "bool": "BOOLEAN",
-                "datetime64[ns]": "DATETIME",
-            }
-
+            df = pd.read_csv(file_path, encoding="utf-8")
+            # Sanitize dataset name by replacing spaces with underscores
+            dataset_name = os.path.splitext(os.path.basename(file_path))[0].replace(" ", "_")
+            # Sanitize column names by replacing spaces with underscores
+            df.columns = [col.replace(" ", "_") for col in df.columns]
             # Drop the table if it already exists
             try:
                 con.execute(f"DROP TABLE IF EXISTS {dataset_name};")
@@ -269,7 +270,6 @@ async def query_data(request: QueryRequest):
                 return JSONResponse(
                     content={"error": f"Error dropping table: {e}"}, status_code=400
                 )
-
             # Create table in DuckDB
             con.register("data_table", df)
             con.execute(f"CREATE TABLE {dataset_name} AS SELECT * FROM data_table")
