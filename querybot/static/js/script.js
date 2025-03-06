@@ -209,7 +209,7 @@ async function executeQuery() {
           <h6>Response from LLM:</h6>
           <div>${unsafeHTML(marked.parse(result.llm_response))}</div>
           <h6>SQL Query Execution Result:</h6>
-          <div id="sqlResultTable" class="table-responsive" style="max-height: 400px; overflow-x: auto; border: 1px"></div>
+          <div id="sqlResultTable" class="table-responsive" style="max-height: 400px;"></div>
           <div class="mt-3">
             <button class="btn btn-primary me-2" @click=${() => downloadCSV(result.result, "query_result.csv")}>
               <i class="bi bi-download"></i> Download Results as CSV

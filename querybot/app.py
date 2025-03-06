@@ -13,6 +13,7 @@ import logging
 import numpy as np
 import os
 import pandas as pd
+import re
 
 load_dotenv()
 
@@ -258,11 +259,29 @@ async def query_data(request: QueryRequest):
 
         # Process each file and create tables in DuckDB
         for file_path in file_paths:
-            df = pd.read_csv(file_path, encoding="utf-8")
-            # Sanitize dataset name by replacing spaces with underscores
-            dataset_name = os.path.splitext(os.path.basename(file_path))[0].replace(" ", "_")
-            # Sanitize column names by replacing spaces with underscores
-            df.columns = [col.replace(" ", "_") for col in df.columns]
+            df = pd.read_csv(file_path, encoding="utf-8", errors="replace")
+            
+            # Sanitize dataset name to be SQL compatible
+            dataset_name = os.path.splitext(os.path.basename(file_path))[0]
+            # Replace spaces, dashes, and other non-alphanumeric chars with underscores
+            dataset_name = re.sub(r'[^a-zA-Z0-9_]', '_', dataset_name)
+            # Ensure name doesn't start with a number
+            if dataset_name[0].isdigit():
+                dataset_name = f"t_{dataset_name}"
+            
+            # Sanitize column names to be SQL compatible
+            sanitized_columns = []
+            for col in df.columns:
+                # Replace spaces, dashes, and other non-alphanumeric chars with underscores
+                sanitized_col = re.sub(r'[^a-zA-Z0-9_]', '_', col)
+                # Ensure column name doesn't start with a number
+                if sanitized_col[0].isdigit():
+                    sanitized_col = f"c_{sanitized_col}"
+                sanitized_columns.append(sanitized_col)
+            
+            # Rename the columns in the dataframe
+            df.columns = sanitized_columns
+            
             # Drop the table if it already exists
             try:
                 con.execute(f"DROP TABLE IF EXISTS {dataset_name};")
