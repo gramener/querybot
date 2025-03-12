@@ -107,7 +107,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Query Result
 
-![Query Result](Screenshot.png)
+![Query Result](screenshot.png)
 
 ## Contribution Guidelines
 

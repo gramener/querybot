@@ -259,8 +259,8 @@ async def query_data(request: QueryRequest):
 
         # Process each file and create tables in DuckDB
         for file_path in file_paths:
-            df = pd.read_csv(file_path, encoding="utf-8", errors="replace")
-            
+            df = pd.read_csv(file_path, encoding="utf-8", encoding_errors="replace")
+
             # Sanitize dataset name to be SQL compatible
             dataset_name = os.path.splitext(os.path.basename(file_path))[0]
             # Replace spaces, dashes, and other non-alphanumeric chars with underscores
@@ -268,7 +268,7 @@ async def query_data(request: QueryRequest):
             # Ensure name doesn't start with a number
             if dataset_name[0].isdigit():
                 dataset_name = f"t_{dataset_name}"
-            
+
             # Sanitize column names to be SQL compatible
             sanitized_columns = []
             for col in df.columns:
@@ -278,10 +278,10 @@ async def query_data(request: QueryRequest):
                 if sanitized_col[0].isdigit():
                     sanitized_col = f"c_{sanitized_col}"
                 sanitized_columns.append(sanitized_col)
-            
+
             # Rename the columns in the dataframe
             df.columns = sanitized_columns
-            
+
             # Drop the table if it already exists
             try:
                 con.execute(f"DROP TABLE IF EXISTS {dataset_name};")
@@ -328,7 +328,6 @@ async def query_data(request: QueryRequest):
         llm_response = await call_llm_system_prompt(llm_prompt)
 
         # Extract the SQL query from the response
-        import re
         sql_query_match = re.search(r"```sql\n(.*?)\n```", llm_response, re.DOTALL)
         if not sql_query_match:
             # Try alternative formats

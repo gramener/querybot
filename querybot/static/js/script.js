@@ -107,14 +107,12 @@ function renderOutput(data) {
                 </tbody>
               </table>
               <h6 class="card-title">Suggested Questions:</h6>
-              <ul class="list-group">
-                ${dataset.suggested_questions.split("\n").map(
-                  (question) =>
-                    html` <li class="list-group-item">
-                      <a href="#" class="suggested-question">${question}</a>
-                    </li>`
-                )}
-              </ul>
+              <div class="list-group">
+                ${dataset.suggested_questions
+                  .split("\n")
+                  .filter(question => question.trim())
+                  .map((question) => html` <a class="list-group-item suggested-question" href="#">${question}</a>`)}
+              </div>
             </div>
           </div>
         `
