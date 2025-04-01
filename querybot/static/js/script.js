@@ -1,6 +1,10 @@
 import { html, render } from "https://cdn.jsdelivr.net/npm/lit-html/lit-html.js";
 import { unsafeHTML } from "https://cdn.jsdelivr.net/npm/lit-html@3/directives/unsafe-html.js";
 import { Marked } from "https://cdn.jsdelivr.net/npm/marked@13/+esm";
+import { Chart, registerables } from "https://cdn.jsdelivr.net/npm/chart.js@4/+esm";
+
+// Initialize Chart.js
+Chart.register(...registerables);
 
 const marked = new Marked();
 
@@ -8,6 +12,10 @@ const $openaiApiKey = document.getElementById("openai-api-key");
 const $openaiApiBase = document.getElementById("openai-api-base");
 const $toast = document.getElementById("toast");
 const toast = new bootstrap.Toast($toast);
+
+// Add variables to track query results and chart instance
+let latestQueryResult = [];
+let latestChart;
 
 function notify(cls, title, message) {
   $toast.querySelector(".toast-title").textContent = title;
@@ -148,10 +156,16 @@ function parseSchema(schemaString) {
 
 // Simplified error handling
 function renderError(errorMessage) {
+  const chartCode = document.getElementById("chart-code");
   const errorTemplate = html`
     <div class="alert alert-danger" role="alert"><strong>Error:</strong> ${errorMessage}</div>
   `;
-  render(errorTemplate, DOM.output() || DOM.responseOutput());
+  
+  if (chartCode && chartCode.isConnected) {
+    render(errorTemplate, chartCode);
+  } else {
+    render(errorTemplate, DOM.output() || DOM.responseOutput());
+  }
 }
 
 // Update executeQuery function to include explanation functionality
@@ -198,6 +212,9 @@ async function executeQuery() {
       return;
     }
 
+    // Store the latest query result
+    latestQueryResult = result.result;
+
     const queryOutput = html`
       <div class="card">
         <div class="card-header">
@@ -209,23 +226,49 @@ async function executeQuery() {
           <h6>SQL Query Execution Result:</h6>
           <div id="sqlResultTable" class="table-responsive" style="max-height: 50vh;"></div>
           <div class="mt-3">
-            <button class="btn btn-primary me-2" @click=${() => downloadCSV(result.result, "query_result.csv")}>
-              <i class="bi bi-download"></i> Download Results as CSV
-            </button>
-            <div class="row mt-2">
-              <div class="col-md-8">
-                <input
-                  type="text"
-                  id="additionalPrompt"
-                  class="form-control"
-                  placeholder="Optional: Add specific instructions for the explanation..."
-                />
-              </div>
-              <div class="col-md-4">
-                <button class="btn btn-info" @click=${() => explainResults(result.result, query)}>
-                  <i class="bi bi-lightbulb"></i> Explain Results
+            <div class="row align-items-center g-2">
+              <div class="col-auto">
+                <button class="btn btn-primary me-2" @click=${() => downloadCSV(result.result, "query_result.csv")}>
+                  <i class="bi bi-download"></i> Download Results as CSV
                 </button>
               </div>
+              <div class="col">
+                <input
+                  type="text"
+                  id="chart-input"
+                  class="form-control"
+                  placeholder="Describe what you want to chart"
+                  value="Draw the most appropriate chart to visualize this data"
+                />
+              </div>
+              <div class="col-auto">
+                <button id="chart-button" class="btn btn-primary" @click=${() => generateChart()}>
+                  <i class="bi bi-bar-chart-line"></i> Draw Chart
+                </button>
+              </div>
+            </div>
+            <div class="row mt-3">
+              <div class="col-12">
+                <div id="chart-container" class="mt-3" style="display: none;">
+                  <canvas id="chart"></canvas>
+                </div>
+                <div id="chart-code" class="mt-3"></div>
+              </div>
+            </div>
+          </div>
+          <div class="row mt-2">
+            <div class="col-md-8">
+              <input
+                type="text"
+                id="additionalPrompt"
+                class="form-control"
+                placeholder="Optional: Add specific instructions for the explanation..."
+              />
+            </div>
+            <div class="col-md-4">
+              <button class="btn btn-info" @click=${() => explainResults(result.result, query)}>
+                <i class="bi bi-lightbulb"></i> Explain Results
+              </button>
             </div>
           </div>
           <div id="explanationOutput" class="mt-3"></div>
@@ -329,23 +372,23 @@ async function loadFile() {
   }
 }
 
-// Optimized table generation
+// Helper function to generate an HTML table from data
 function generateTable(data) {
-  if (!Array.isArray(data) || !data.length) return "";
+  if (!Array.isArray(data) || !data.length) return "<p>No data available</p>";
 
   const headers = Object.keys(data[0]);
   return `
-        <table class="table table-bordered table-striped">
-            <thead>
-                <tr>${headers.map((header) => `<th>${header}</th>`).join("")}</tr>
-            </thead>
-            <tbody>
-                ${data
-                  .map((row) => `<tr>${headers.map((header) => `<td>${row[header] ?? ""}</td>`).join("")}</tr>`)
-                  .join("")}
-            </tbody>
-        </table>
-    `;
+    <table class="table table-bordered table-striped">
+      <thead>
+        <tr>${headers.map((header) => `<th>${header}</th>`).join("")}</tr>
+      </thead>
+      <tbody>
+        ${data
+          .map((row) => `<tr>${headers.map((header) => `<td>${row[header] ?? ""}</td>`).join("")}</tr>`)
+          .join("")}
+      </tbody>
+    </table>
+  `;
 }
 
 // Optimized CSV conversion and download
@@ -416,3 +459,151 @@ document.querySelector("#openai-api-key").value = localStorage.getItem("localDat
 document.querySelector("#openai-api-base").value =
   localStorage.getItem("localDataChatOpenAIAPIBase") ?? "https://llmfoundry.straive.com/openai/v1";
 if (!document.querySelector("#openai-api-key").value) document.querySelector("#settings").classList.add("show");
+
+// Add function to generate charts
+async function generateChart() {
+  const chartInput = document.getElementById("chart-input").value.trim();
+  const chartContainer = document.getElementById("chart-container");
+  const chartCode = document.getElementById("chart-code");
+  
+  if (!latestQueryResult || latestQueryResult.length === 0) {
+    renderError("No data available for charting.");
+    return;
+  }
+  
+  chartContainer.style.display = "block";
+  render(loading, chartCode);
+  
+  try {
+    // Create a sample of the data for the prompt
+    const dataSample = latestQueryResult.slice(0, 5);
+    
+    // Define a specialized system prompt for chart generation
+    const chartSystemPrompt = `You are an expert data visualization developer specializing in Chart.js.
+
+IMPORTANT INSTRUCTIONS:
+1. You MUST return valid JavaScript code for Chart.js inside a code block marked with \`\`\`js and ending with \`\`\`.
+2. Your code MUST create a chart using the Chart.js library.
+3. Do NOT include explanations outside the code block.
+4. The code must be executable as-is.
+5. The Chart.js library is already imported.
+6. The data variable is already available as 'data'.
+7. Use document.getElementById("chart") to access the canvas.
+8. Your code must return the Chart instance.
+
+The response format MUST be:
+
+\`\`\`js
+// Your Chart.js code here
+return new Chart(
+  document.getElementById("chart"),
+  {
+    type: "appropriate-chart-type",
+    data: {
+      // Use data variable here
+    },
+    options: {
+      // Chart options here
+    }
+  }
+);
+\`\`\``;
+
+    const response = await fetch("/query", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dataset_name: "chart",
+        query: `Create a Chart.js visualization based on this request: "${chartInput}".
+        
+Here's a sample of the data (the full dataset will be available as 'data' variable):
+${JSON.stringify(dataSample, null, 2)}
+
+The full dataset has ${latestQueryResult.length} records.
+
+Remember: Return ONLY JavaScript code in a code block that creates and returns a Chart instance using Chart.js.`,
+        file_path: DOM.filePathInput()?.value.trim(),
+        is_explanation: true, // Use the explanation path to bypass SQL extraction
+        system_prompt: chartSystemPrompt
+      }),
+    });
+
+    const result = await response.json();
+    if (!response.ok) {
+      renderError(`Error generating chart: ${result.error || "Unknown error"}`);
+      return;
+    }
+
+    // Use improved code extraction function
+    const code = extractCodeFromMarkdown(result.llm_response);
+    
+    if (!code) {
+      renderError("Could not extract chart code from response. The LLM did not provide code in a proper ```js code block format.");
+      return;
+    }
+    
+    // Display the generated code
+    render(html`<pre><code class="language-javascript">${code}</code></pre>`, chartCode);
+    
+    // Clear previous chart if it exists
+    if (latestChart) {
+      latestChart.destroy();
+    }
+    
+    // Execute the code to create the chart
+    try {
+      const chartFunction = new Function("Chart", "data", code);
+      latestChart = chartFunction(Chart, latestQueryResult);
+    } catch (execError) {
+      renderError(`Error executing chart code: ${execError.message}`);
+      console.error("Chart execution error:", execError);
+    }
+    
+  } catch (error) {
+    renderError(`Failed to generate chart: ${error.message}`);
+    console.error("Chart generation error:", error);
+  }
+}
+
+// Improved helper function to extract code from markdown with better pattern matching
+function extractCodeFromMarkdown(markdown) {
+  // Try different code block patterns
+  const patterns = [
+    /```js\s*\n([\s\S]*?)\n```/,
+    /```javascript\s*\n([\s\S]*?)\n```/,
+    /```\s*\n([\s\S]*?)\n```/,
+    /```([\s\S]*?)```/
+  ];
+  
+  for (const pattern of patterns) {
+    const match = markdown.match(pattern);
+    if (match && match[1]) {
+      // Verify it contains Chart.js code
+      if (match[1].includes('new Chart') && match[1].includes('document.getElementById("chart")')) {
+        return match[1].trim();
+      }
+    }
+  }
+  
+  // If we couldn't find a valid code block with the patterns above,
+  // try to extract any code that looks like Chart.js code
+  if (markdown.includes('new Chart') && markdown.includes('document.getElementById("chart")')) {
+    const startIndex = Math.max(
+      0,
+      markdown.lastIndexOf('```', markdown.indexOf('new Chart')),
+      markdown.lastIndexOf('function', markdown.indexOf('new Chart'))
+    );
+    const endIndex = markdown.indexOf('```', markdown.indexOf('return new Chart')) + 3;
+    
+    if (endIndex > 3) {
+      const extractedCode = markdown.substring(
+        startIndex === 0 ? 0 : startIndex + 3,
+        endIndex === 2 ? markdown.length : endIndex - 3
+      ).trim();
+      
+      return extractedCode;
+    }
+  }
+  
+  return null;
+}

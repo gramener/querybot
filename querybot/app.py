@@ -51,7 +51,7 @@ SYSTEM_PROMPT = (
     "1. Always use simple, DuckDB-compatible SQL syntax\n"
     "2. Avoid complex string manipulations\n"
     "3. Use straightforward GROUP BY and aggregations\n"
-    "4. Limit results to prevent overwhelming output\n"
+    "4. Never use LIMIT, Display all results\n"
     "5. Focus on finding meaningful patterns in the data\n\n"
     "For the output, follow this structure:\n"
     "1. Guess the objective of the user based on their query.\n"
