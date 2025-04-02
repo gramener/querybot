@@ -161,11 +161,7 @@ function renderError(errorMessage) {
     <div class="alert alert-danger" role="alert"><strong>Error:</strong> ${errorMessage}</div>
   `;
   
-  if (chartCode && chartCode.isConnected) {
-    render(errorTemplate, chartCode);
-  } else {
-    render(errorTemplate, DOM.output() || DOM.responseOutput());
-  }
+  render(errorTemplate, DOM.output() || DOM.responseOutput());
 }
 
 // Update executeQuery function to include explanation functionality
@@ -227,12 +223,12 @@ async function executeQuery() {
           <div id="sqlResultTable" class="table-responsive" style="max-height: 50vh;"></div>
           <div class="mt-3">
             <div class="row align-items-center g-2">
-              <div class="col-auto">
+              <div class="col-2">
                 <button class="btn btn-primary me-2" @click=${() => downloadCSV(result.result, "query_result.csv")}>
-                  <i class="bi bi-download"></i> Download Results as CSV
+                  <i class="bi bi-download"></i> Download CSV
                 </button>
               </div>
-              <div class="col">
+              <div class="col-8">
                 <input
                   type="text"
                   id="chart-input"
@@ -241,7 +237,7 @@ async function executeQuery() {
                   value="Draw the most appropriate chart to visualize this data"
                 />
               </div>
-              <div class="col-auto">
+              <div class="col-2">
                 <button id="chart-button" class="btn btn-primary" @click=${() => generateChart()}>
                   <i class="bi bi-bar-chart-line"></i> Draw Chart
                 </button>
@@ -584,26 +580,5 @@ function extractCodeFromMarkdown(markdown) {
       }
     }
   }
-  
-  // If we couldn't find a valid code block with the patterns above,
-  // try to extract any code that looks like Chart.js code
-  if (markdown.includes('new Chart') && markdown.includes('document.getElementById("chart")')) {
-    const startIndex = Math.max(
-      0,
-      markdown.lastIndexOf('```', markdown.indexOf('new Chart')),
-      markdown.lastIndexOf('function', markdown.indexOf('new Chart'))
-    );
-    const endIndex = markdown.indexOf('```', markdown.indexOf('return new Chart')) + 3;
-    
-    if (endIndex > 3) {
-      const extractedCode = markdown.substring(
-        startIndex === 0 ? 0 : startIndex + 3,
-        endIndex === 2 ? markdown.length : endIndex - 3
-      ).trim();
-      
-      return extractedCode;
-    }
-  }
-  
   return null;
 }
