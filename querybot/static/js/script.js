@@ -103,8 +103,9 @@ function renderRecentPaths() {
             <button
               class="btn btn-sm btn-outline-secondary"
               @click=${() => selectPath(path)}
+              title=${path}
             >
-              ${path.length > 20 ? path.substring(0, 17) + "..." : path}
+              ${path.split('/').pop().split('\\').pop()}
             </button>
           `
         )}

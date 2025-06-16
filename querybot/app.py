@@ -15,6 +15,7 @@ import os
 import pandas as pd
 import re
 import math
+import urllib.parse
 
 # Custom JSON encoder to handle non-serializable values
 class CustomJSONEncoder(json.JSONEncoder):
@@ -49,38 +50,69 @@ con.execute("LOAD mysql")
 SYSTEM_PROMPT = (
     "You are an expert data analyst tasked with analyzing data using DuckDB SQL syntax. "
     "Based on the user's question, determine the appropriate analytical approach:\n\n"
+    "CRITICAL: Column Name Handling\n"
+    "1. ALWAYS use the EXACT column names as shown in the schema\n"
+    "2. If a column name contains spaces or special characters, it MUST be quoted with double quotes\n"
+    "3. Example: If schema shows \"Transaction Type\", use \"Transaction Type\" in queries\n"
+    "4. Never modify or transform column names (e.g., don't change \"Transaction Type\" to TransactionType)\n"
+    "5. Always check the schema first to get the exact column names\n\n"
     "For questions about complaints/issues/problems:\n"
     "- Use a simple but effective approach with LIKE operators\n"
     "- Example query structure:\n"
-    "  SELECT ReviewText, COUNT(*) as Frequency\n"
+    "  SELECT \"Review Text\", COUNT(*) as Frequency\n"
     "  FROM dataset\n"
-    "  WHERE LOWER(ReviewText) LIKE '%keyword1%'\n"
-    "     OR LOWER(ReviewText) LIKE '%keyword2%'\n"
-    "  GROUP BY ReviewText\n"
+    "  WHERE LOWER(\"Review Text\") LIKE '%keyword1%'\n"
+    "     OR LOWER(\"Review Text\") LIKE '%keyword2%'\n"
+    "  GROUP BY \"Review Text\"\n"
     "  ORDER BY Frequency DESC\n"
     "For trends or patterns:\n"
     "- Use simple aggregations (COUNT, AVG, SUM)\n"
     "- Group by relevant columns\n"
-    "- Always use LOWER() for case-insensitive text matching\n\n"
+    "- Always use LOWER() for case-insensitive text matching\n"
+    "- Always quote column names with spaces\n\n"
     "For comparative analysis:\n"
     "- Use simple subqueries or window functions\n"
     "- Include HAVING clauses for filtered aggregations\n"
-    "- Sort results meaningfully\n\n"
+    "- Sort results meaningfully\n"
+    "- Always quote column names with spaces\n\n"
     "Important rules:\n"
     "1. Always use simple, DuckDB-compatible SQL syntax\n"
     "2. Avoid complex string manipulations\n"
     "3. Use straightforward GROUP BY and aggregations\n"
     "4. Never use LIMIT, Display all results\n"
-    "5. Focus on finding meaningful patterns in the data\n\n"
+    "5. Focus on finding meaningful patterns in the data\n"
+    "6. IMPORTANT: DuckDB has specific syntax limitations:\n"
+    "   - Do NOT use UNION ALL for combining results\n"
+    "   - Instead, use WITH clauses (CTEs) or separate queries\n"
+    "   - For multiple aggregations, use separate queries or CTEs\n"
+    "   - Example of combining results without UNION:\n"
+    "     WITH issuer_stats AS (\n"
+    "       SELECT 'Issuer' as category, \"Column Name\", ...\n"
+    "       FROM table\n"
+    "       GROUP BY \"Column Name\"\n"
+    "     ),\n"
+    "     region_stats AS (\n"
+    "       SELECT 'Region' as category, \"Column Name\", ...\n"
+    "       FROM table\n"
+    "       GROUP BY \"Column Name\"\n"
+    "     )\n"
+    "     SELECT * FROM issuer_stats\n"
+    "     UNION ALL\n"
+    "     SELECT * FROM region_stats\n\n"
     "When working with dates in DuckDB:\n"
     "1. Never use DATE() function directly on columns\n"
     "2. Do NOT use julianday() function (it doesn't exist in DuckDB)\n"
     "3. For date conversions, use STRPTIME with multiple formats to handle various date inputs:\n"
-    "   - STRPTIME(column_name, ['%Y-%m-%d', '%d-%m-%Y', '%m/%d/%Y', '%Y/%m/%d', '%d/%m/%Y', '%m-%d-%Y', '%d.%m.%Y', '%Y.%m.%d'])\n"
+    "   - STRPTIME(\"Column Name\", ['%Y-%m-%d', '%d-%m-%Y', '%m/%d/%Y', '%Y/%m/%d', '%d/%m/%Y', '%m-%d-%Y', '%d.%m.%Y', '%Y.%m.%d'])\n"
     "   - This will automatically try each format and convert to ISO 8601 (YYYY-MM-DD)\n"
     "4. For date differences, use DATE_DIFF('day', date1, date2) function\n"
     "5. For date comparisons, use the BETWEEN operator or simple comparison operators\n"
-    "6. For date operations, use date_sub(), date_add() functions\n\n"
+    "6. For date operations, use the following syntax:\n"
+    "   - To subtract a time period from a date: date_column - INTERVAL '1 year'\n"
+    "   - To add a time period to a date: date_column + INTERVAL '1 year'\n"
+    "   - Example: CURRENT_DATE - INTERVAL '1 year'\n"
+    "   - Supported intervals: 'year', 'month', 'day', 'hour', 'minute', 'second'\n"
+    "   - For date ranges, use: date_column BETWEEN (CURRENT_DATE - INTERVAL '1 year') AND CURRENT_DATE\n\n"
     "For the output, follow this structure:\n"
     "1. Guess the objective of the user based on their query.\n"
     "2. Describe the steps to achieve this objective in SQL.\n"
@@ -93,6 +125,45 @@ SYSTEM_PROMPT = (
 # In-memory storage for uploaded datasets
 datasets = {}
 
+def quote_column_name(column_name: str) -> str:
+    """Quote column names that contain spaces or special characters."""
+    # Skip empty or None column names
+    if not column_name:
+        return column_name
+        
+    # Remove any existing quotes first
+    column_name = column_name.strip('"')
+    
+    # Only quote if the column name contains spaces or special characters
+    if ' ' in column_name or any(c in column_name for c in '[](){}<>+-*/=!@#$%^&|\\'):
+        return f'"{column_name}"'
+    return column_name
+
+def process_sql_query(sql_query: str, schema_info: list) -> str:
+    """Process SQL query to properly quote column names."""
+    if not schema_info:
+        return sql_query
+        
+    # Create a mapping of unquoted column names to quoted ones
+    column_mapping = {}
+    for col in schema_info:
+        if col and len(col) > 0 and col[0]:  # Ensure we have valid column names
+            original = col[0].strip('"')  # Remove any existing quotes
+            quoted = quote_column_name(original)
+            if original and quoted:  # Only add if both are non-empty
+                column_mapping[original] = quoted
+    
+    # Sort column names by length (longest first) to avoid partial matches
+    sorted_columns = sorted(column_mapping.keys(), key=len, reverse=True)
+    
+    # Replace column names in the query
+    for original in sorted_columns:
+        quoted = column_mapping[original]
+        # Use word boundaries and ensure we don't match inside quotes
+        pattern = r'(?<!")\b' + re.escape(original) + r'\b(?!")'
+        sql_query = re.sub(pattern, quoted, sql_query)
+    
+    return sql_query
 
 # Helper function to call LLM API
 async def call_llm_system_prompt(user_input, model="gpt-4.1-nano", api_base=None):
@@ -139,29 +210,47 @@ class AnalyzeFileRequest(BaseModel):
     file_paths: List[str]  # Now this can contain comma-separated paths
 
 
+def is_remote_url(file_path: str) -> bool:
+    """Check if the given path is a remote URL."""
+    try:
+        result = urllib.parse.urlparse(file_path)
+        return all([result.scheme, result.netloc])
+    except:
+        return False
+
 def get_schema_from_duckdb(file_path: str) -> tuple[str, str]:
     """Get schema using DuckDB's introspection capabilities."""
     try:
         file_extension = Path(file_path).suffix.lower()
         con = duckdb.connect(":memory:")
 
-        # Handle different file types
+        # Handle different file types for both local and remote files
         if file_extension in [".csv", ".txt"]:
             # For CSV files, try to infer schema
             con.execute(f"CREATE TABLE temp AS SELECT * FROM read_csv_auto('{file_path}')")
         elif file_extension == ".parquet":
-            con.execute(f"CREATE TABLE temp AS SELECT * FROM parquet_scan('{file_path}')")
+            con.execute(f"CREATE TABLE temp AS SELECT * FROM read_parquet('{file_path}')")
+        elif file_extension == ".json":
+            con.execute(f"CREATE TABLE temp AS SELECT * FROM read_json_auto('{file_path}')")
+        elif file_extension == ".duckdb" and is_remote_url(file_path):
+            # For remote DuckDB files
+            con.execute(f"ATTACH '{file_path}' AS remote_db")
+            tables = con.execute("SELECT name FROM remote_db.sqlite_master WHERE type='table'").fetchall()
+            if not tables:
+                raise ValueError("No tables found in remote DuckDB database")
+            table_name = tables[0][0]
+            con.execute(f"CREATE TABLE temp AS SELECT * FROM remote_db.{table_name}")
         elif file_extension == ".xlsx":
+            if is_remote_url(file_path):
+                raise ValueError("Remote Excel files are not supported")
             con.execute(f"CREATE TABLE temp AS SELECT * FROM read_excel('{file_path}')")
         elif file_extension == ".db":
-            # For SQLite databases, list all tables and let user choose
+            if is_remote_url(file_path):
+                raise ValueError("Remote SQLite databases are not supported")
             con.execute(f"ATTACH '{file_path}' AS sqlite_db")
-            tables = con.execute(
-                "SELECT name FROM sqlite_db.sqlite_master WHERE type='table'"
-            ).fetchall()
+            tables = con.execute("SELECT name FROM sqlite_db.sqlite_master WHERE type='table'").fetchall()
             if not tables:
                 raise ValueError("No tables found in SQLite database")
-            # Use first table for now (could be enhanced to handle multiple tables)
             table_name = tables[0][0]
             con.execute(f"CREATE TABLE temp AS SELECT * FROM sqlite_db.{table_name}")
         else:
@@ -303,56 +392,81 @@ async def query_data(request: QueryRequest):
 
         # Process each file and create tables in DuckDB
         for file_path in file_paths:
-            df = pd.read_csv(file_path, encoding="utf-8", encoding_errors="replace", dayfirst=True)
-            
-            # No need for the date conversion logic since we're using dayfirst=True
-            
-            # Sanitize dataset name to be SQL compatible
-            dataset_name = os.path.splitext(os.path.basename(file_path))[0]
-            # Replace spaces, dashes, and other non-alphanumeric chars with underscores
-            dataset_name = re.sub(r'[^a-zA-Z0-9_]', '_', dataset_name)
-            # Ensure name doesn't start with a number
-            if dataset_name[0].isdigit():
-                dataset_name = f"t_{dataset_name}"
+            # Handle both local and remote files
+            if is_remote_url(file_path):
+                # For remote files, we'll use DuckDB's native remote file reading capabilities
+                file_extension = Path(file_path).suffix.lower()
+                if file_extension not in ['.csv', '.parquet', '.json', '.duckdb']:
+                    return JSONResponse(
+                        content={"error": f"Remote file type {file_extension} is not supported"}, 
+                        status_code=400
+                    )
+                
+                # Create table directly from remote file
+                dataset_name = os.path.splitext(os.path.basename(file_path))[0]
+                dataset_name = re.sub(r'[^a-zA-Z0-9_]', '_', dataset_name)
+                if dataset_name[0].isdigit():
+                    dataset_name = f"t_{dataset_name}"
 
-            # Sanitize column names to be SQL compatible
-            sanitized_columns = []
-            for col in df.columns:
-                # Replace spaces, dashes, and other non-alphanumeric chars with underscores
-                sanitized_col = re.sub(r'[^a-zA-Z0-9_]', '_', col)
-                # Ensure column name doesn't start with a number
-                if sanitized_col[0].isdigit():
-                    sanitized_col = f"c_{sanitized_col}"
-                sanitized_columns.append(sanitized_col)
+                try:
+                    con.execute(f"DROP TABLE IF EXISTS {dataset_name};")
+                    if file_extension == '.csv':
+                        con.execute(f"CREATE TABLE {dataset_name} AS SELECT * FROM read_csv_auto('{file_path}')")
+                    elif file_extension == '.parquet':
+                        con.execute(f"CREATE TABLE {dataset_name} AS SELECT * FROM read_parquet('{file_path}')")
+                    elif file_extension == '.json':
+                        con.execute(f"CREATE TABLE {dataset_name} AS SELECT * FROM read_json_auto('{file_path}')")
+                    elif file_extension == '.duckdb':
+                        con.execute(f"ATTACH '{file_path}' AS remote_db")
+                        tables = con.execute("SELECT name FROM remote_db.sqlite_master WHERE type='table'").fetchall()
+                        if not tables:
+                            raise ValueError("No tables found in remote DuckDB database")
+                        table_name = tables[0][0]
+                        con.execute(f"CREATE TABLE {dataset_name} AS SELECT * FROM remote_db.{table_name}")
+                except Exception as e:
+                    return JSONResponse(
+                        content={"error": f"Error reading remote file: {str(e)}"}, 
+                        status_code=400
+                    )
+            else:
+                # Existing local file handling code
+                df = pd.read_csv(file_path, encoding="utf-8", encoding_errors="replace", dayfirst=True)
+                
+                dataset_name = os.path.splitext(os.path.basename(file_path))[0]
+                dataset_name = re.sub(r'[^a-zA-Z0-9_]', '_', dataset_name)
+                if dataset_name[0].isdigit():
+                    dataset_name = f"t_{dataset_name}"
 
-            # Rename the columns in the dataframe
-            df.columns = sanitized_columns
+                sanitized_columns = []
+                for col in df.columns:
+                    sanitized_col = re.sub(r'[^a-zA-Z0-9_]', '_', col)
+                    if sanitized_col[0].isdigit():
+                        sanitized_col = f"c_{sanitized_col}"
+                    sanitized_columns.append(sanitized_col)
 
-            # Drop the table if it already exists
-            try:
-                con.execute(f"DROP TABLE IF EXISTS {dataset_name};")
-            except Exception as e:
-                return JSONResponse(
-                    content={"error": f"Error dropping table: {e}"}, status_code=400
-                )
-            # Create table in DuckDB
-            con.register("data_table", df)
-            con.execute(f"CREATE TABLE {dataset_name} AS SELECT * FROM data_table")
+                df.columns = sanitized_columns
 
-            # Generate schema description
+                try:
+                    con.execute(f"DROP TABLE IF EXISTS {dataset_name};")
+                except Exception as e:
+                    return JSONResponse(
+                        content={"error": f"Error dropping table: {e}"}, 
+                        status_code=400
+                    )
+                
+                con.register("data_table", df)
+                con.execute(f"CREATE TABLE {dataset_name} AS SELECT * FROM data_table")
+
+            # Get schema information for both local and remote files
+            schema_info = con.execute(f"DESCRIBE {dataset_name}").fetchall()
             schema_description = (
                 f"CREATE TABLE {dataset_name} (\n"
-                + ",\n".join(
-                    [
-                        f"[{col}] {dtype_mapping.get(str(df[col].dtype), 'TEXT')}"
-                        for col in df.columns
-                    ]
-                )
+                + ",\n".join([f"[{col[0]}] {col[1]}" for col in schema_info])
                 + "\n);"
             )
 
             # Store dataset info
-            datasets[dataset_name] = {"data": df, "schema_description": schema_description}
+            datasets[dataset_name] = {"schema_description": schema_description}
 
         # Rest of your existing query_data logic
         dataset_schemas = ""
@@ -390,6 +504,9 @@ async def query_data(request: QueryRequest):
                 }, status_code=400)
 
         sql_query = sql_query_match.group(1).strip()
+        
+        # Process the SQL query to properly quote column names
+        sql_query = process_sql_query(sql_query, schema_info)
         
         # Fix common date syntax issues in DuckDB
         # Replace DATE() function with STRPTIME for multiple date formats

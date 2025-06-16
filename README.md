@@ -17,12 +17,62 @@ QueryBot is built with FastAPI for the backend and a responsive HTML/Bootstrap f
 
 ## Features
 
-- **Multi-format Support**: Query CSV, Parquet, SQLite, Excel files, and MySQL databases with a single interface.
-  - *Example*: Users can upload a CSV file and query it directly.
-- **Interactive SQL Editor**: Writes and executes SQL queries with syntax highlighting. The application automatically generates DuckDB queries and runs on datasets. It supports multiple files if the paths are provided separated by commas.
-- **Real-time Results**: View query results instantly in a paginated table format
-- **Export Functionality**: Download query results in CSV format for further analysis. *Note*: Currently, only CSV format is supported for export.
-- **Responsive Design**: Works seamlessly across desktop and mobile devices
+- **Enterprise Data Integration**:
+  - Native support for CSV, Parquet, SQLite, Excel, JSON, and DuckDB files
+  - Direct MySQL database connectivity with secure connection handling
+  - Remote file access capabilities for cloud-stored datasets
+  - Automatic schema inference with type validation
+  - Multi-dataset querying with automatic join optimization
+
+- **AI-Powered Query Processing**:
+  - Natural language to SQL conversion using state-of-the-art LLMs
+  - Multi-model support with cost-optimized options:
+    - GPT-4.1-nano
+    - GPT-4.1-mini
+    - o4-mini
+    - Gemini 2.5 Flash
+  - Context-aware query generation with dataset understanding
+  - Intelligent column name handling with special character support
+  - Custom system prompts for specialized analytical workflows
+
+- **Advanced Analytics Engine**:
+  - Complex temporal analysis with multi-format date handling
+  - Advanced text analytics with case-insensitive pattern matching
+  - Window functions and complex aggregations
+  - Custom analytical workflows through system prompts
+  - Automatic query optimization and execution planning
+
+- **Interactive Data Visualization**:
+  - Dynamic chart generation with Chart.js integration
+  - Context-aware visualization recommendations
+  - Custom visualization descriptions
+  - Real-time data exploration
+  - Export capabilities with CSV formatting
+
+- **Enterprise-Grade Architecture**:
+  - Query history persistence with result caching
+  - Dataset-specific query suggestions
+  - Comprehensive error handling and logging
+  - Environment-based configuration management
+  - Scalable FastAPI architecture with DuckDB backend
+  - Custom JSON encoder for complex data types
+  - Secure API key management
+
+- **User Experience**:
+  - Responsive design for desktop and mobile
+  - Dark theme support
+  - Recent files history
+  - Recent queries per file
+  - Toast notifications for operations
+  - Loading indicators
+  - Error handling with detailed messages
+
+- **Development Features**:
+  - FastAPI backend
+  - DuckDB for efficient data processing
+  - Custom JSON encoder for complex data types
+  - Environment variable configuration
+  - Extensible architecture
 
 ## Getting Started
 
