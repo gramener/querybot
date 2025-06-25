@@ -497,7 +497,18 @@ async def query_data(request: QueryRequest):
             is_remote = dataset.get("is_remote", False)
             if schema_description and isinstance(schema_description, str):
                 if is_remote:
-                    dataset_schemas += f"Dataset name: {name}\nFile path: {file_path}\nSchema: {schema_description}\nNote: This is a remote file, use file path directly in queries (e.g., read_parquet('{file_path}'))\n\n"
+                    # Determine the correct read function based on file extension
+                    file_extension = Path(file_path).suffix.lower()
+                    if file_extension in ['.csv', '.txt']:
+                        read_function = f"read_csv_auto('{file_path}')"
+                    elif file_extension == '.parquet':
+                        read_function = f"read_parquet('{file_path}')"
+                    elif file_extension == '.json':
+                        read_function = f"read_json_auto('{file_path}')"
+                    else:
+                        read_function = f"read_csv_auto('{file_path}')"  # fallback
+                    
+                    dataset_schemas += f"Dataset name: {name}\nFile path: {file_path}\nSchema: {schema_description}\nNote: This is a remote file, use file path directly in queries (e.g., {read_function})\n\n"
                 else:
                     dataset_schemas += f"Dataset name: {name}\nSchema: {schema_description}\n\n"
 
