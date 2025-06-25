@@ -46,6 +46,8 @@ con.execute("INSTALL excel")
 con.execute("LOAD excel")
 con.execute("INSTALL mysql")
 con.execute("LOAD mysql")
+con.execute("INSTALL httpfs")
+con.execute("LOAD httpfs")
 
 SYSTEM_PROMPT = (
     "You are an expert data analyst tasked with analyzing data using DuckDB SQL syntax. "
@@ -226,12 +228,12 @@ def get_schema_from_duckdb(file_path: str) -> tuple[str, str]:
 
         # Handle different file types for both local and remote files
         if file_extension in [".csv", ".txt"]:
-            # For CSV files, try to infer schema
-            con.execute(f"CREATE TABLE temp AS SELECT * FROM read_csv_auto('{file_path}')")
+            # For CSV files, get schema without creating table
+            schema_info = con.execute(f"DESCRIBE SELECT * FROM read_csv_auto('{file_path}') LIMIT 0").fetchall()
         elif file_extension == ".parquet":
-            con.execute(f"CREATE TABLE temp AS SELECT * FROM read_parquet('{file_path}')")
+            schema_info = con.execute(f"DESCRIBE SELECT * FROM read_parquet('{file_path}') LIMIT 0").fetchall()
         elif file_extension == ".json":
-            con.execute(f"CREATE TABLE temp AS SELECT * FROM read_json_auto('{file_path}')")
+            schema_info = con.execute(f"DESCRIBE SELECT * FROM read_json_auto('{file_path}') LIMIT 0").fetchall()
         elif file_extension == ".duckdb" and is_remote_url(file_path):
             # For remote DuckDB files
             con.execute(f"ATTACH '{file_path}' AS remote_db")
@@ -239,11 +241,12 @@ def get_schema_from_duckdb(file_path: str) -> tuple[str, str]:
             if not tables:
                 raise ValueError("No tables found in remote DuckDB database")
             table_name = tables[0][0]
-            con.execute(f"CREATE TABLE temp AS SELECT * FROM remote_db.{table_name}")
+            schema_info = con.execute(f"DESCRIBE SELECT * FROM remote_db.{table_name} LIMIT 0").fetchall()
         elif file_extension == ".xlsx":
             if is_remote_url(file_path):
                 raise ValueError("Remote Excel files are not supported")
             con.execute(f"CREATE TABLE temp AS SELECT * FROM read_excel('{file_path}')")
+            schema_info = con.execute("DESCRIBE temp").fetchall()
         elif file_extension == ".db":
             if is_remote_url(file_path):
                 raise ValueError("Remote SQLite databases are not supported")
@@ -252,12 +255,9 @@ def get_schema_from_duckdb(file_path: str) -> tuple[str, str]:
             if not tables:
                 raise ValueError("No tables found in SQLite database")
             table_name = tables[0][0]
-            con.execute(f"CREATE TABLE temp AS SELECT * FROM sqlite_db.{table_name}")
+            schema_info = con.execute(f"DESCRIBE SELECT * FROM sqlite_db.{table_name} LIMIT 0").fetchall()
         else:
             raise ValueError(f"Unsupported file type: {file_extension}")
-
-        # Get schema information
-        schema_info = con.execute("DESCRIBE temp").fetchall()
 
         # Generate schema description
         schema_description = (
@@ -266,8 +266,19 @@ def get_schema_from_duckdb(file_path: str) -> tuple[str, str]:
             + "\n);"
         )
 
-        # Get sample data for better question suggestions
-        sample_data = con.execute("SELECT * FROM temp LIMIT 5").fetchall()
+        # Get sample data for better question suggestions (only for files that support it efficiently)
+        sample_data = []
+        if file_extension in [".csv", ".txt"]:
+            sample_data = con.execute(f"SELECT * FROM read_csv_auto('{file_path}') LIMIT 5").fetchall()
+        elif file_extension == ".parquet":
+            sample_data = con.execute(f"SELECT * FROM read_parquet('{file_path}') LIMIT 5").fetchall()
+        elif file_extension == ".json":
+            sample_data = con.execute(f"SELECT * FROM read_json_auto('{file_path}') LIMIT 5").fetchall()
+        elif file_extension == ".xlsx" and not is_remote_url(file_path):
+            sample_data = con.execute("SELECT * FROM temp LIMIT 5").fetchall()
+        elif file_extension in [".db", ".duckdb"]:
+            # For database files, sample data is already handled above
+            pass
 
         return schema_description, sample_data
 
@@ -402,27 +413,27 @@ async def query_data(request: QueryRequest):
                         status_code=400
                     )
                 
-                # Create table directly from remote file
+                # Don't create table for remote files, just store the file reference
                 dataset_name = os.path.splitext(os.path.basename(file_path))[0]
                 dataset_name = re.sub(r'[^a-zA-Z0-9_]', '_', dataset_name)
                 if dataset_name[0].isdigit():
                     dataset_name = f"t_{dataset_name}"
 
                 try:
-                    con.execute(f"DROP TABLE IF EXISTS {dataset_name};")
+                    # Get schema without creating table
                     if file_extension == '.csv':
-                        con.execute(f"CREATE TABLE {dataset_name} AS SELECT * FROM read_csv_auto('{file_path}')")
+                        schema_info = con.execute(f"DESCRIBE SELECT * FROM read_csv_auto('{file_path}') LIMIT 0").fetchall()
                     elif file_extension == '.parquet':
-                        con.execute(f"CREATE TABLE {dataset_name} AS SELECT * FROM read_parquet('{file_path}')")
+                        schema_info = con.execute(f"DESCRIBE SELECT * FROM read_parquet('{file_path}') LIMIT 0").fetchall()
                     elif file_extension == '.json':
-                        con.execute(f"CREATE TABLE {dataset_name} AS SELECT * FROM read_json_auto('{file_path}')")
+                        schema_info = con.execute(f"DESCRIBE SELECT * FROM read_json_auto('{file_path}') LIMIT 0").fetchall()
                     elif file_extension == '.duckdb':
                         con.execute(f"ATTACH '{file_path}' AS remote_db")
                         tables = con.execute("SELECT name FROM remote_db.sqlite_master WHERE type='table'").fetchall()
                         if not tables:
                             raise ValueError("No tables found in remote DuckDB database")
                         table_name = tables[0][0]
-                        con.execute(f"CREATE TABLE {dataset_name} AS SELECT * FROM remote_db.{table_name}")
+                        schema_info = con.execute(f"DESCRIBE SELECT * FROM remote_db.{table_name} LIMIT 0").fetchall()
                 except Exception as e:
                     return JSONResponse(
                         content={"error": f"Error reading remote file: {str(e)}"}, 
@@ -458,22 +469,37 @@ async def query_data(request: QueryRequest):
                 con.execute(f"CREATE TABLE {dataset_name} AS SELECT * FROM data_table")
 
             # Get schema information for both local and remote files
-            schema_info = con.execute(f"DESCRIBE {dataset_name}").fetchall()
+            if is_remote_url(file_path):
+                # For remote files, schema_info was already obtained above
+                pass
+            else:
+                # For local files, get schema from created table
+                schema_info = con.execute(f"DESCRIBE {dataset_name}").fetchall()
+            
             schema_description = (
                 f"CREATE TABLE {dataset_name} (\n"
                 + ",\n".join([f"[{col[0]}] {col[1]}" for col in schema_info])
                 + "\n);"
             )
 
-            # Store dataset info
-            datasets[dataset_name] = {"schema_description": schema_description}
+            # Store dataset info with file path for remote files
+            datasets[dataset_name] = {
+                "schema_description": schema_description,
+                "file_path": file_path,
+                "is_remote": is_remote_url(file_path)
+            }
 
         # Rest of your existing query_data logic
         dataset_schemas = ""
         for name, dataset in datasets.items():
             schema_description = dataset.get("schema_description")
+            file_path = dataset.get("file_path")
+            is_remote = dataset.get("is_remote", False)
             if schema_description and isinstance(schema_description, str):
-                dataset_schemas += f"Dataset name: {name}\nSchema: {schema_description}\n\n"
+                if is_remote:
+                    dataset_schemas += f"Dataset name: {name}\nFile path: {file_path}\nSchema: {schema_description}\nNote: This is a remote file, use file path directly in queries (e.g., read_parquet('{file_path}'))\n\n"
+                else:
+                    dataset_schemas += f"Dataset name: {name}\nSchema: {schema_description}\n\n"
 
         # User query
         user_query = request.query
