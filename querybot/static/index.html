@@ -122,6 +122,16 @@
       </div>
       <div class="col-md-6">
         <button id="executeButton" class="btn btn-primary btn-custom" disabled>Execute Query</button>
+        <button class="btn btn-outline-secondary btn-custom" type="button" data-bs-toggle="collapse" data-bs-target="#systemPromptEditor" aria-expanded="false">
+          <i class="bi bi-gear-wide-connected"></i> System Prompt
+        </button>
+      </div>
+    </div>
+    <div class="collapse mb-3" id="systemPromptEditor">
+      <div class="card card-body">
+        <label for="systemPromptTextarea" class="form-label">System Prompt</label>
+        <textarea id="systemPromptTextarea" rows="8" class="form-control" placeholder="Edit system prompt..."></textarea>
+        <small class="form-text text-muted">Customize the AI's behavior and instructions.</small>
       </div>
     </div>
     <div id="recent-queries" class="mt-3"></div>

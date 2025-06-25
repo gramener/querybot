@@ -134,6 +134,9 @@ document.addEventListener("DOMContentLoaded", () => {
   if (executeButton) {
     executeButton.addEventListener("click", executeQuery);
   }
+  
+  // Load default system prompt
+  loadDefaultSystemPrompt();
   // Use event delegation to handle dynamically created elements
   document.body.addEventListener("click", function (event) {
     if (event.target.classList.contains("suggested-question")) {
@@ -158,6 +161,22 @@ document.addEventListener("DOMContentLoaded", () => {
   // Initialize recent queries display
   renderRecentQueries();
 });
+
+// Function to load default system prompt
+async function loadDefaultSystemPrompt() {
+  const systemPromptTextarea = document.getElementById("systemPromptTextarea");
+  if (!systemPromptTextarea) return;
+  
+  try {
+    const response = await fetch("/system-prompt");
+    if (response.ok) {
+      const data = await response.json();
+      systemPromptTextarea.value = data.system_prompt;
+    }
+  } catch (error) {
+    console.error("Failed to load system prompt:", error);
+  }
+}
 
 function renderOutput(data) {
   const output = document.getElementById("output");
@@ -278,6 +297,10 @@ async function executeQuery() {
   }
 
   try {
+    // Get custom system prompt if provided
+    const systemPromptTextarea = document.getElementById("systemPromptTextarea");
+    const customSystemPrompt = systemPromptTextarea?.value.trim();
+
     // Prepare the request body
     const requestBody = {
       dataset_name: "dataset",
@@ -286,6 +309,11 @@ async function executeQuery() {
       extract_sql: true,
       model,
     };
+
+    // Add custom system prompt if provided
+    if (customSystemPrompt) {
+      requestBody.system_prompt = customSystemPrompt;
+    }
 
     // Add custom base URL if available
     if (customBaseUrl) {

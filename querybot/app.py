@@ -168,9 +168,9 @@ def process_sql_query(sql_query: str, schema_info: list) -> str:
     return sql_query
 
 # Helper function to call LLM API
-async def call_llm_system_prompt(user_input, model="gpt-4.1-nano", api_base=None):
-    # Use the system prompt directly, no need to check for date handling
-    current_prompt = SYSTEM_PROMPT
+async def call_llm_system_prompt(user_input, model="gpt-4.1-nano", api_base=None, custom_system_prompt=None):
+    # Use custom system prompt if provided, otherwise use default
+    current_prompt = custom_system_prompt if custom_system_prompt else SYSTEM_PROMPT
     
     headers = {
         "Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}:querybot",
@@ -316,6 +316,11 @@ def get_schema_from_mysql(connection_string: str) -> tuple[str, str]:
 @app.get("/list-files")
 async def list_files():
     return {"files": [f.name for f in Path(config_dir).glob("*.csv")]}
+
+
+@app.get("/system-prompt")
+async def get_system_prompt():
+    return {"system_prompt": SYSTEM_PROMPT}
 
 
 @app.post("/upload")
@@ -525,7 +530,8 @@ async def query_data(request: QueryRequest):
         llm_response = await call_llm_system_prompt(
             llm_prompt, 
             request.model, 
-            request.api_base
+            request.api_base,
+            request.system_prompt
         )
 
         # Extract the SQL query from the response
