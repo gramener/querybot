@@ -80,7 +80,9 @@ flowchart TD
 
 3. **Data Processing**
    - DuckDB engine for high-performance query execution
-   - Direct data access without loading entire datasets into memory
+   - Zero-copy data access using DuckDB's native read functions
+   - Direct file reading without temporary tables
+   - Unified approach for all file types (CSV, Parquet, Excel, SQLite, MySQL)
    - Automatic column name handling and type inference
    - Support for complex SQL operations including joins and aggregations
 
@@ -94,8 +96,8 @@ flowchart TD
 
 - **Enterprise Data Integration**:
   - Native support for CSV, Parquet, SQLite, Excel, JSON, and DuckDB files
-  - Direct MySQL database connectivity with secure connection handling
-  - S3 bucket integration for cloud storage access
+  - Zero-copy data access using DuckDB's native read functions
+  - Direct file reading without temporary tables
   - Smart file format detection and handling
   - Automatic schema inference with type validation
   - Multi-dataset querying with automatic join optimization
