@@ -113,8 +113,8 @@
         <div class="input-group">
           <label class="input-group-text" for="modelSelect">Model</label>
           <select class="form-select" id="modelSelect">
-            <option value="gpt-4.1-nano" selected>GPT-4.1-nano ($0.1)</option>
-            <option value="gpt-4.1-mini">GPT-4.1-mini ($0.40)</option>
+            <option value="gpt-4.1-mini" selected>GPT-4.1-mini ($0.40)</option>
+            <option value="gpt-4.1-nano">GPT-4.1-nano ($0.1)</option>
             <option value="o4-mini">o4-mini ($3.3)</option>
             <option value="gemini-2.5-flash-preview-04-17" data-base-url="https://llmfoundry.straive.com/gemini/v1beta/openai/chat/completions">Gemini 2.5 Flash ($2.5)</option>
           </select>
@@ -122,6 +122,16 @@
       </div>
       <div class="col-md-6">
         <button id="executeButton" class="btn btn-primary btn-custom" disabled>Execute Query</button>
+        <button class="btn btn-outline-secondary btn-custom" type="button" data-bs-toggle="collapse" data-bs-target="#systemPromptEditor" aria-expanded="false">
+          <i class="bi bi-gear-wide-connected"></i> System Prompt
+        </button>
+      </div>
+    </div>
+    <div class="collapse mb-3" id="systemPromptEditor">
+      <div class="card card-body">
+        <label for="systemPromptTextarea" class="form-label">System Prompt</label>
+        <textarea id="systemPromptTextarea" rows="8" class="form-control" placeholder="Edit system prompt..."></textarea>
+        <small class="form-text text-muted">Customize the AI's behavior and instructions.</small>
       </div>
     </div>
     <div id="recent-queries" class="mt-3"></div>

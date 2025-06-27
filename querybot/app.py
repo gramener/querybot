@@ -168,9 +168,9 @@ def process_sql_query(sql_query: str, schema_info: list) -> str:
     return sql_query
 
 # Helper function to call LLM API
-async def call_llm_system_prompt(user_input, model="gpt-4.1-nano", api_base=None):
-    # Use the system prompt directly, no need to check for date handling
-    current_prompt = SYSTEM_PROMPT
+async def call_llm_system_prompt(user_input, model="gpt-4.1-mini", api_base=None, custom_system_prompt=None):
+    # Use custom system prompt if provided, otherwise use default
+    current_prompt = custom_system_prompt if custom_system_prompt else SYSTEM_PROMPT
     
     headers = {
         "Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}:querybot",
@@ -205,7 +205,7 @@ class QueryRequest(BaseModel):
     file_path: str
     is_explanation: bool = False
     system_prompt: str | None = None  # Make system_prompt optional
-    model: str = "gpt-4.1-nano"  # Default model
+    model: str = "gpt-4.1-mini"  # Default model
     api_base: str | None = None  # Optional custom API base URL
 
 class AnalyzeFileRequest(BaseModel):
@@ -245,17 +245,20 @@ def get_schema_from_duckdb(file_path: str) -> tuple[str, str]:
         elif file_extension == ".xlsx":
             if is_remote_url(file_path):
                 raise ValueError("Remote Excel files are not supported")
-            con.execute(f"CREATE TABLE temp AS SELECT * FROM read_excel('{file_path}')")
-            schema_info = con.execute("DESCRIBE temp").fetchall()
+            schema_info = con.execute(f"DESCRIBE SELECT * FROM read_excel('{file_path}') LIMIT 0").fetchall()
         elif file_extension == ".db":
             if is_remote_url(file_path):
                 raise ValueError("Remote SQLite databases are not supported")
-            con.execute(f"ATTACH '{file_path}' AS sqlite_db")
-            tables = con.execute("SELECT name FROM sqlite_db.sqlite_master WHERE type='table'").fetchall()
+            con.execute("INSTALL sqlite")
+            con.execute("LOAD sqlite")
+            # Get list of tables directly from SQLite file
+            tables = con.execute(f"SELECT name FROM sqlite_scan('{file_path}', 'sqlite_master') WHERE type='table'").fetchall()
             if not tables:
                 raise ValueError("No tables found in SQLite database")
             table_name = tables[0][0]
-            schema_info = con.execute(f"DESCRIBE SELECT * FROM sqlite_db.{table_name} LIMIT 0").fetchall()
+            # Use sqlite_scan directly without attaching
+            read_function = f"sqlite_scan('{file_path}', '{table_name}')"
+            schema_info = con.execute(f"DESCRIBE SELECT * FROM {read_function} LIMIT 0").fetchall()
         else:
             raise ValueError(f"Unsupported file type: {file_extension}")
 
@@ -296,11 +299,9 @@ def get_schema_from_mysql(connection_string: str) -> tuple[str, str]:
         # Use DuckDB's MySQL scanner
         con.execute("INSTALL mysql")
         con.execute("LOAD mysql")
-        con.execute(f"CREATE TABLE temp AS SELECT * FROM mysql_scan('{connection_string}')")
-
-        # Get schema and sample data
-        schema_info = con.execute("DESCRIBE temp").fetchall()
-        sample_data = con.execute("SELECT * FROM temp LIMIT 5").fetchall()
+        # Get schema without creating table
+        schema_info = con.execute(f"DESCRIBE SELECT * FROM mysql_scan('{connection_string}') LIMIT 0").fetchall()
+        sample_data = con.execute(f"SELECT * FROM mysql_scan('{connection_string}') LIMIT 5").fetchall()
 
         schema_description = (
             "CREATE TABLE dataset (\n"
@@ -316,6 +317,11 @@ def get_schema_from_mysql(connection_string: str) -> tuple[str, str]:
 @app.get("/list-files")
 async def list_files():
     return {"files": [f.name for f in Path(config_dir).glob("*.csv")]}
+
+
+@app.get("/system-prompt")
+async def get_system_prompt():
+    return {"system_prompt": SYSTEM_PROMPT}
 
 
 @app.post("/upload")
@@ -335,7 +341,7 @@ async def upload_csv(request: AnalyzeFileRequest):
             f"Schema: {schema_description}\n"
             "Please provide 5 suggested questions (ONLY QUESTIONS, NO EXPLANATION, NO Serial Numbers) that can be answered using duckDB queries on this dataset."
         )
-        suggested_questions = await call_llm_system_prompt(user_prompt, "gpt-4.1-nano")
+        suggested_questions = await call_llm_system_prompt(user_prompt, "gpt-4.1-mini")
 
         uploaded_datasets.append({
                 "dataset_name": dataset_name,
@@ -403,78 +409,58 @@ async def query_data(request: QueryRequest):
 
         # Process each file and create tables in DuckDB
         for file_path in file_paths:
-            # Handle both local and remote files
-            if is_remote_url(file_path):
-                # For remote files, we'll use DuckDB's native remote file reading capabilities
-                file_extension = Path(file_path).suffix.lower()
-                if file_extension not in ['.csv', '.parquet', '.json', '.duckdb']:
-                    return JSONResponse(
-                        content={"error": f"Remote file type {file_extension} is not supported"}, 
-                        status_code=400
-                    )
-                
-                # Don't create table for remote files, just store the file reference
-                dataset_name = os.path.splitext(os.path.basename(file_path))[0]
-                dataset_name = re.sub(r'[^a-zA-Z0-9_]', '_', dataset_name)
-                if dataset_name[0].isdigit():
-                    dataset_name = f"t_{dataset_name}"
+            file_extension = Path(file_path).suffix.lower()
+            if file_extension not in ['.csv', '.parquet', '.json', '.duckdb', '.xlsx', '.db']:
+                return JSONResponse(
+                    content={"error": f"File type {file_extension} is not supported"}, 
+                    status_code=400
+                )
+            
+            # Get dataset name
+            dataset_name = os.path.splitext(os.path.basename(file_path))[0]
+            dataset_name = re.sub(r'[^a-zA-Z0-9_]', '_', dataset_name)
+            if dataset_name[0].isdigit():
+                dataset_name = f"t_{dataset_name}"
 
-                try:
-                    # Get schema without creating table
-                    if file_extension == '.csv':
-                        schema_info = con.execute(f"DESCRIBE SELECT * FROM read_csv_auto('{file_path}') LIMIT 0").fetchall()
-                    elif file_extension == '.parquet':
-                        schema_info = con.execute(f"DESCRIBE SELECT * FROM read_parquet('{file_path}') LIMIT 0").fetchall()
-                    elif file_extension == '.json':
-                        schema_info = con.execute(f"DESCRIBE SELECT * FROM read_json_auto('{file_path}') LIMIT 0").fetchall()
-                    elif file_extension == '.duckdb':
-                        con.execute(f"ATTACH '{file_path}' AS remote_db")
-                        tables = con.execute("SELECT name FROM remote_db.sqlite_master WHERE type='table'").fetchall()
-                        if not tables:
-                            raise ValueError("No tables found in remote DuckDB database")
-                        table_name = tables[0][0]
-                        schema_info = con.execute(f"DESCRIBE SELECT * FROM remote_db.{table_name} LIMIT 0").fetchall()
-                except Exception as e:
-                    return JSONResponse(
-                        content={"error": f"Error reading remote file: {str(e)}"}, 
-                        status_code=400
-                    )
-            else:
-                # Existing local file handling code
-                df = pd.read_csv(file_path, encoding="utf-8", encoding_errors="replace", dayfirst=True)
-                
-                dataset_name = os.path.splitext(os.path.basename(file_path))[0]
-                dataset_name = re.sub(r'[^a-zA-Z0-9_]', '_', dataset_name)
-                if dataset_name[0].isdigit():
-                    dataset_name = f"t_{dataset_name}"
-
-                sanitized_columns = []
-                for col in df.columns:
-                    sanitized_col = re.sub(r'[^a-zA-Z0-9_]', '_', col)
-                    if sanitized_col[0].isdigit():
-                        sanitized_col = f"c_{sanitized_col}"
-                    sanitized_columns.append(sanitized_col)
-
-                df.columns = sanitized_columns
-
-                try:
-                    con.execute(f"DROP TABLE IF EXISTS {dataset_name};")
-                except Exception as e:
-                    return JSONResponse(
-                        content={"error": f"Error dropping table: {e}"}, 
-                        status_code=400
-                    )
-                
-                con.register("data_table", df)
-                con.execute(f"CREATE TABLE {dataset_name} AS SELECT * FROM data_table")
-
-            # Get schema information for both local and remote files
-            if is_remote_url(file_path):
-                # For remote files, schema_info was already obtained above
-                pass
-            else:
-                # For local files, get schema from created table
-                schema_info = con.execute(f"DESCRIBE {dataset_name}").fetchall()
+            try:
+                # Get schema without creating table
+                if file_extension in ['.csv', '.txt']:
+                    schema_info = con.execute(f"DESCRIBE SELECT * FROM read_csv_auto('{file_path}') LIMIT 0").fetchall()
+                    read_function = f"read_csv_auto('{file_path}')"
+                elif file_extension == '.parquet':
+                    schema_info = con.execute(f"DESCRIBE SELECT * FROM read_parquet('{file_path}') LIMIT 0").fetchall()
+                    read_function = f"read_parquet('{file_path}')"
+                elif file_extension == '.json':
+                    schema_info = con.execute(f"DESCRIBE SELECT * FROM read_json_auto('{file_path}') LIMIT 0").fetchall()
+                    read_function = f"read_json_auto('{file_path}')"
+                elif file_extension == '.xlsx':
+                    schema_info = con.execute(f"DESCRIBE SELECT * FROM read_excel('{file_path}') LIMIT 0").fetchall()
+                    read_function = f"read_excel('{file_path}')"
+                elif file_extension == '.db':
+                    # First attach the SQLite database
+                    con.execute(f"INSTALL sqlite")
+                    con.execute(f"LOAD sqlite")
+                    # Get list of tables directly from SQLite file
+                    tables = con.execute(f"SELECT name FROM sqlite_scan('{file_path}', 'sqlite_master') WHERE type='table'").fetchall()
+                    if not tables:
+                        raise ValueError("No tables found in SQLite database")
+                    table_name = tables[0][0]
+                    # Use sqlite_scan directly without attaching
+                    read_function = f"sqlite_scan('{file_path}', '{table_name}')"
+                    schema_info = con.execute(f"DESCRIBE SELECT * FROM {read_function} LIMIT 0").fetchall()
+                elif file_extension == '.duckdb':
+                    con.execute(f"ATTACH '{file_path}' AS remote_db")
+                    tables = con.execute("SELECT name FROM remote_db.sqlite_master WHERE type='table'").fetchall()
+                    if not tables:
+                        raise ValueError("No tables found in DuckDB database")
+                    table_name = tables[0][0]
+                    schema_info = con.execute(f"DESCRIBE SELECT * FROM remote_db.{table_name} LIMIT 0").fetchall()
+                    read_function = f"remote_db.{table_name}"
+            except Exception as e:
+                return JSONResponse(
+                    content={"error": f"Error reading file: {str(e)}"}, 
+                    status_code=400
+                )
             
             schema_description = (
                 f"CREATE TABLE {dataset_name} (\n"
@@ -482,11 +468,11 @@ async def query_data(request: QueryRequest):
                 + "\n);"
             )
 
-            # Store dataset info with file path for remote files
+            # Store dataset info with file path
             datasets[dataset_name] = {
                 "schema_description": schema_description,
                 "file_path": file_path,
-                "is_remote": is_remote_url(file_path)
+                "read_function": read_function
             }
 
         # Rest of your existing query_data logic
@@ -494,12 +480,9 @@ async def query_data(request: QueryRequest):
         for name, dataset in datasets.items():
             schema_description = dataset.get("schema_description")
             file_path = dataset.get("file_path")
-            is_remote = dataset.get("is_remote", False)
+            read_function = dataset.get("read_function")
             if schema_description and isinstance(schema_description, str):
-                if is_remote:
-                    dataset_schemas += f"Dataset name: {name}\nFile path: {file_path}\nSchema: {schema_description}\nNote: This is a remote file, use file path directly in queries (e.g., read_parquet('{file_path}'))\n\n"
-                else:
-                    dataset_schemas += f"Dataset name: {name}\nSchema: {schema_description}\n\n"
+                dataset_schemas += f"Dataset name: {name}\nFile path: {file_path}\nSchema: {schema_description}\nNote: Use {read_function} in queries\n\n"
 
         # User query
         user_query = request.query
@@ -514,7 +497,8 @@ async def query_data(request: QueryRequest):
         llm_response = await call_llm_system_prompt(
             llm_prompt, 
             request.model, 
-            request.api_base
+            request.api_base,
+            request.system_prompt
         )
 
         # Extract the SQL query from the response

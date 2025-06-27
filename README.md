@@ -4,6 +4,7 @@ A powerful web application that enables users to upload various data formats, ex
 
 ## Table of Contents
 - [Overview](#overview)
+- [Architecture](#architecture)
 - [Features](#features)
 - [Getting Started](#getting-started)
 - [Development](#development)
@@ -15,14 +16,92 @@ A powerful web application that enables users to upload various data formats, ex
 
 QueryBot is built with FastAPI for the backend and a responsive HTML/Bootstrap frontend. It provides a seamless experience for data analysis by allowing users to query multiple data sources through a unified SQL interface.
 
+## Architecture
+
+QueryBot follows a modern client-server architecture with real-time data processing capabilities:
+
+```mermaid
+flowchart TD
+    %% Define subgraphs with better spacing
+    subgraph FE["Frontend Layer"]
+        direction TB
+        UI["Web Interface<br/>/static/index.html"]
+        JS["JavaScript Client<br/>/static/js/script.js"]
+        UI --- JS
+    end
+
+    subgraph BE["Application Layer"]
+        direction TB
+        API["FastAPI Server<br/>/app.py"]
+        DuckDB["DuckDB Engine<br/>In-Memory Processing"]
+        LLM["LLM Service<br/>Query Generation"]
+        API --- DuckDB
+        API --- LLM
+    end
+
+    subgraph DS["Data Layer"]
+        direction TB
+        Local["Local Storage<br/>CSV | Parquet | Excel"]
+        Remote["Cloud Storage<br/>S3 | Remote URLs"]
+        DB["Databases<br/>MySQL | SQLite"]
+    end
+
+    %% Define interactions with better labels
+    FE --> |"[A] File Upload Request"| BE
+    FE --> |"[B] Query Execution"| BE
+    FE --> |"[C] Chart Generation"| BE
+    
+    BE --> |"Schema Inference"| DS
+    BE --> |"Data Retrieval"| DS
+    
+    %% Return flow
+    DS --> |"Raw Data"| BE
+    BE --> |"Processed Results"| FE
+
+    %% Styling
+    classDef default font-family:arial,stroke-width:2px
+    classDef layer fill:none,stroke-width:2px
+    class FE,BE,DS layer
+```
+
+### Workflow
+
+1. **Data Ingestion**
+   - Users can upload local files or provide paths to remote data sources
+   - Supported formats include CSV, Parquet, Excel, SQLite, and MySQL databases
+   - S3 bucket integration for cloud storage access
+   - Smart file format detection and schema inference
+
+2. **Query Processing**
+   - Natural language queries are converted to SQL using LLM services
+   - Multiple LLM models supported (GPT-4.1-nano, GPT-4.1-mini, o4-mini, Gemini 2.5 Flash)
+   - Customizable system prompts for specialized workflows
+   - Automatic handling of complex data types and date formats
+
+3. **Data Processing**
+   - DuckDB engine for high-performance query execution
+   - Zero-copy data access using DuckDB's native read functions
+   - Direct file reading without temporary tables
+   - Unified approach for all file types (CSV, Parquet, Excel, SQLite, MySQL)
+   - Automatic column name handling and type inference
+   - Support for complex SQL operations including joins and aggregations
+
+4. **Visualization**
+   - Dynamic chart generation using Chart.js
+   - Context-aware visualization recommendations
+   - Interactive data exploration capabilities
+   - Export functionality for further analysis
+
 ## Features
 
 - **Enterprise Data Integration**:
   - Native support for CSV, Parquet, SQLite, Excel, JSON, and DuckDB files
-  - Direct MySQL database connectivity with secure connection handling
-  - Remote file access capabilities for cloud-stored datasets
+  - Zero-copy data access using DuckDB's native read functions
+  - Direct file reading without temporary tables
+  - Smart file format detection and handling
   - Automatic schema inference with type validation
   - Multi-dataset querying with automatic join optimization
+  - Direct DuckDB access for improved performance
 
 - **AI-Powered Query Processing**:
   - Natural language to SQL conversion using state-of-the-art LLMs
@@ -33,7 +112,8 @@ QueryBot is built with FastAPI for the backend and a responsive HTML/Bootstrap f
     - Gemini 2.5 Flash
   - Context-aware query generation with dataset understanding
   - Intelligent column name handling with special character support
-  - Custom system prompts for specialized analytical workflows
+  - Customizable system prompts for specialized workflows
+  - User-editable system prompts for fine-tuned control
 
 - **Advanced Analytics Engine**:
   - Complex temporal analysis with multi-format date handling
@@ -41,6 +121,7 @@ QueryBot is built with FastAPI for the backend and a responsive HTML/Bootstrap f
   - Window functions and complex aggregations
   - Custom analytical workflows through system prompts
   - Automatic query optimization and execution planning
+  - Enhanced date format handling
 
 - **Interactive Data Visualization**:
   - Dynamic chart generation with Chart.js integration
@@ -177,7 +258,16 @@ We welcome contributions! Please see our [CONTRIBUTING.md](CONTRIBUTING.md) for 
 ## FAQ
 
 **Q: What data formats are supported?**
-A: The application supports CSV, Parquet, SQLite, Excel, and MySQL formats.
+A: The application supports CSV, Parquet, SQLite, Excel, and MySQL formats, with direct DuckDB integration and S3 storage support.
 
 **Q: How do I report an issue?**
 A: Please use the [Issue Tracker](https://github.com/gramener/querybot/issues) to report any issues you encounter.
+
+**Q: Can I customize the AI's behavior?**
+A: Yes, you can edit the system prompt to customize how the AI interprets and processes your queries.
+
+**Q: Does QueryBot support cloud storage?**
+A: Yes, QueryBot supports accessing files directly from S3 buckets.
+
+**Q: How does QueryBot handle different date formats?**
+A: QueryBot includes enhanced date format handling that can automatically recognize and process various date formats in your data.
