@@ -47,9 +47,9 @@ flowchart TD
     end
 
     %% Define interactions with better labels
-    FE --> |"1. File Upload Request"| BE
-    FE --> |"2. Query Execution"| BE
-    FE --> |"3. Chart Generation"| BE
+    FE --> |"[A] File Upload Request"| BE
+    FE --> |"[B] Query Execution"| BE
+    FE --> |"[C] Chart Generation"| BE
     
     BE --> |"Schema Inference"| DS
     BE --> |"Data Retrieval"| DS
