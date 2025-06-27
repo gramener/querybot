@@ -168,7 +168,7 @@ def process_sql_query(sql_query: str, schema_info: list) -> str:
     return sql_query
 
 # Helper function to call LLM API
-async def call_llm_system_prompt(user_input, model="gpt-4.1-nano", api_base=None, custom_system_prompt=None):
+async def call_llm_system_prompt(user_input, model="gpt-4.1-mini", api_base=None, custom_system_prompt=None):
     # Use custom system prompt if provided, otherwise use default
     current_prompt = custom_system_prompt if custom_system_prompt else SYSTEM_PROMPT
     
@@ -205,7 +205,7 @@ class QueryRequest(BaseModel):
     file_path: str
     is_explanation: bool = False
     system_prompt: str | None = None  # Make system_prompt optional
-    model: str = "gpt-4.1-nano"  # Default model
+    model: str = "gpt-4.1-mini"  # Default model
     api_base: str | None = None  # Optional custom API base URL
 
 class AnalyzeFileRequest(BaseModel):
@@ -340,7 +340,7 @@ async def upload_csv(request: AnalyzeFileRequest):
             f"Schema: {schema_description}\n"
             "Please provide 5 suggested questions (ONLY QUESTIONS, NO EXPLANATION, NO Serial Numbers) that can be answered using duckDB queries on this dataset."
         )
-        suggested_questions = await call_llm_system_prompt(user_prompt, "gpt-4.1-nano")
+        suggested_questions = await call_llm_system_prompt(user_prompt, "gpt-4.1-mini")
 
         uploaded_datasets.append({
                 "dataset_name": dataset_name,
