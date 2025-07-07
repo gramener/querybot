@@ -67,6 +67,63 @@
 
   <div class="container">
     <h1 class="mt-5 text-center">Query Bot </h1>
+    
+    <!-- Help Button -->
+    <div class="text-center mb-4 pt-3">
+      <button class="btn btn-outline-info btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#helpSection" aria-expanded="false" aria-controls="helpSection">
+        <i class="bi bi-question-circle"></i> Help & How to Use
+      </button>
+    </div>
+    
+    <!-- Collapsible Help Section -->
+    <div class="collapse" id="helpSection">
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="mb-0"><i class="bi bi-info-circle"></i> How to Use Query Bot</h5>
+        </div>
+        <div class="card-body">
+          <div class="row">
+            <div class="col-md-6">
+              <h6><i class="bi bi-1-circle-fill text-primary"></i> Getting Started</h6>
+              <ul class="list-unstyled ms-3">
+                <li><strong>API Key:</strong> Enter your OpenAI API key in Settings</li>
+                <li><strong>Load Data:</strong> Enter the full path to your CSV file</li>
+                <li><strong>Ask Questions:</strong> Type natural language queries about your data</li>
+              </ul>
+              
+              <h6><i class="bi bi-2-circle-fill text-primary"></i> What You Can Do</h6>
+              <ul class="list-unstyled ms-3">
+                <li><strong>Query Data:</strong> Ask questions in plain English</li>
+                <li><strong>Create Charts:</strong> Generate visualizations automatically</li>
+                <li><strong>Download Results:</strong> Export query results as CSV</li>
+                <li><strong>Get Explanations:</strong> Understand what your data means</li>
+              </ul>
+            </div>
+            
+            <div class="col-md-6">
+              <h6><i class="bi bi-3-circle-fill text-primary"></i> Example Queries</h6>
+              <div class="p-3 rounded">
+                <small class="text-muted">Try asking questions like:</small>
+                <ul class="mb-0 mt-1">
+                  <li>"What is the average sales by region?"</li>
+                  <li>"Show me the top 10 customers by revenue"</li>
+                  <li>"Which products have the highest profit margin?"</li>
+                  <li>"What are the monthly trends?"</li>
+                </ul>
+              </div>
+              
+              <h6 class="mt-3"><i class="bi bi-4-circle-fill text-primary"></i> Pro Tips</h6>
+              <ul class="list-unstyled ms-3">
+                <li><strong>Use the suggested questions</strong> after loading data</li>
+                <li><strong>Customize chart descriptions</strong> for better visualizations</li>
+                <li><strong>Rerun recent queries</strong> from the history</li>
+                <li><strong>Adjust system prompts</strong> for specialized analysis</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- Settings -->
     <form id="settings" class="collapse mt-5 border rounded p-3 mb-3">
